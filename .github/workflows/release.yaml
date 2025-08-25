@@ -7,7 +7,7 @@ on:
 
 env:
   # update with the name of the main binary
-  binary: bevy_github_ci_template
+  binary: bevy_minesweeper
   add_binaries_to_github_release: true
   #itch_target: <itch.io-username>/<game-name>
 
@@ -127,11 +127,11 @@ jobs:
           lfs: ${{ env.use_git_lfs }}
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-pc-windows-msvc
+          targets: x86_64-pc-windows-gnu
 
       - name: Build
         run: |
-          cargo build --release --target x86_64-pc-windows-msvc --no-default-features
+          cargo build --release --target x86_64-pc-windows-gnu --no-default-features
 
       - name: Prepare package
         run: |
