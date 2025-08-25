@@ -147,9 +147,8 @@ jobs:
       - name: Prepare package
         run: |
           mkdir windows
-          cp -r target/x86_64-pc-windows-msvc/release/* windows/
-          mkdir assets -ea 0
-          cp -r assets windows/
+          cp -r target/x86_64-pc-windows-gnu/release/* windows/
+          cp -r assets windows/ || true
 
       - name: Package as a zip
         run: Compress-Archive -Path windows/* -DestinationPath ${{ env.binary }}.zip
