@@ -1,23 +1,12 @@
-use bevy::{
-    color::palettes::css::*,
-    ecs::{system::QueryLens, world},
-    log,
-    prelude::*,
-};
+use bevy::{color::palettes::css::*, ecs::system::QueryLens, log, prelude::*};
 
 use crate::{
-    bounds2::Bounds2,
-    coordinates::Coordinates,
-    tile::Tile,
-    tile_map::{SQUARE_COORDINATES, TileMap},
+    components::{coordinates::Coordinates, tile::Tile},
+    utils::{bounds2::Bounds2, tile_map::TileMap},
 };
 
-pub mod bounds2;
-pub mod coordinates;
-pub mod tile;
-pub mod tile_map;
-
-// minesweeper
+pub mod components;
+pub mod utils;
 
 fn main() {
     App::new()
@@ -43,12 +32,14 @@ impl Board {
         covered: &mut QueryLens<Entity>,
         board: &Board,
         commands: &mut Commands,
+        visited: &mut Vec<Coordinates>,
     ) {
-        let visited = &mut vec![];
+        visited.push(coordinates);
         board.tile_map.scan_map_at(coordinates).for_each(|coord| {
-            if visited.contains(&coord) {
+            if visited.iter().any(|c| *c == coord) {
                 return;
             }
+
             visited.push(coord);
             let tile = board.tile_map.get_tile_at_coords(coord);
             if tile.is_none() {
@@ -56,7 +47,7 @@ impl Board {
             }
             let tile = tile.unwrap();
 
-            if tile.is_empty() {
+            if tile.is_empty() || tile.is_neighbour() {
                 let clicked_tile = tiles
                     .query()
                     .iter()
@@ -70,8 +61,10 @@ impl Board {
                 let (_, _, _, _, children) = tiles_query.get(clicked_tile).unwrap();
                 board.reveal_tile(covered, children, commands);
 
-                // Recursively reveal neighbors
-                self.reveal_empty_neighbors(coord, tiles, covered, board, commands);
+                // Recursively reveal neighbors if the tile is empty
+                if tile.is_empty() {
+                    self.reveal_empty_neighbors(coord, tiles, covered, board, commands, visited);
+                }
             }
         });
     }
@@ -121,37 +114,99 @@ pub fn spawn(mut commands: Commands) {
 }
 
 #[derive(Component)]
-pub struct CoveredTile;
+pub struct TileCover;
 
 pub struct BoardPlugin;
 
 impl Plugin for BoardPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, Self::create_board)
-            .add_systems(Update, Self::click_tile);
+            .add_systems(Update, Self::left_click_tile)
+            .add_systems(Update, Self::right_click_tile);
     }
 }
 
-impl BoardPlugin {
-    pub fn reveal_tile() {}
+#[derive(Component)]
+pub struct Flag;
 
-    pub fn click_tile(
+impl BoardPlugin {
+    pub fn right_click_tile(
+        mouse_input: Res<ButtonInput<MouseButton>>,
+        windows: Query<&Window>,
+        camera: Query<(&Camera, &GlobalTransform)>,
+        mut tiles: Query<(Entity, &GlobalTransform, &Children), With<Tile>>,
+        covers: Query<Entity, With<TileCover>>,
+        flags: Query<Entity, With<Flag>>,
+        board: Single<&Board>,
+        asset_server: Res<AssetServer>,
+        mut commands: Commands,
+    ) {
+        if !mouse_input.just_pressed(MouseButton::Right) {
+            return;
+        }
+        let window = windows.single().expect("No window found");
+        let (camera, camera_transform) = camera.single().expect("No camera found");
+
+        let cursor = window.cursor_position();
+        if cursor.is_none() {
+            return;
+        }
+        let cursor = cursor.unwrap();
+
+        let world_position = camera
+            .viewport_to_world_2d(camera_transform, cursor)
+            .expect("Failed to convert viewport to world");
+
+        let clicked_tile = board.find_colliding_tile(world_position, &mut tiles.transmute_lens());
+        if clicked_tile.is_none() {
+            log::info!("No tile found at position {:?}", world_position);
+            return;
+        }
+
+        let (entity, _, children) = tiles.get(clicked_tile.unwrap()).unwrap();
+        if children.iter().all(|c| covers.get(c).is_err()) {
+            return;
+        }
+
+        let flag: Handle<Image> = asset_server.load("icons/flag.png");
+
+        for child in children.iter() {
+            if let Ok(flag_entity) = flags.get(child) {
+                commands.entity(flag_entity).despawn();
+                return;
+            }
+        }
+
+        let flag_entity = commands
+            .spawn((
+                Sprite::from_image(flag),
+                Flag,
+                Transform {
+                    translation: Vec3::new(0.0, 0.0, 2.0),
+                    ..Default::default()
+                },
+            ))
+            .id();
+        commands.entity(entity).add_child(flag_entity);
+    }
+
+    pub fn left_click_tile(
         mouse_input: Res<ButtonInput<MouseButton>>,
         mut tiles: Query<(Entity, &mut Tile, &GlobalTransform, &Coordinates, &Children)>,
-        mut covered: Query<Entity, With<CoveredTile>>,
+        mut covered: Query<Entity, With<TileCover>>,
         mut sprites: Query<&mut Sprite>,
         windows: Query<&Window>,
         camera: Query<(&Camera, &GlobalTransform)>,
         mut commands: Commands,
-        asset_server: ResMut<AssetServer>,
+        asset_server: Res<AssetServer>,
         board: Single<&Board>,
     ) {
-        let window = windows.single().expect("No window found");
-        let (camera, camera_transform) = camera.single().expect("No camera found");
-
         if !mouse_input.just_pressed(MouseButton::Left) {
             return;
         }
+
+        let window = windows.single().expect("No window found");
+        let (camera, camera_transform) = camera.single().expect("No camera found");
 
         let cursor = window.cursor_position();
         if cursor.is_none() {
@@ -170,56 +225,41 @@ impl BoardPlugin {
         }
 
         let (entity, tile, _, coords, children) = tiles.get(clicked_tile.unwrap()).unwrap();
-        board.reveal_tile(&mut covered.transmute_lens(), &children, &mut commands);
 
-        match *tile {
-            Tile::Empty => {
-                log::info!(
-                    "Safe! You clicked on an empty tile at ({}, {})",
-                    coords.x,
-                    coords.y
-                );
+        if mouse_input.just_pressed(MouseButton::Left) {
+            board.reveal_tile(&mut covered.transmute_lens(), &children, &mut commands);
 
-                board.reveal_empty_neighbors(
-                    *coords,
-                    &mut tiles.transmute_lens(),
-                    &mut covered.transmute_lens(),
-                    &board,
-                    &mut commands,
-                );
-            }
-            Tile::Neighbour(n) => {
-                log::info!(
-                    "Safe! You clicked on a neighbor tile with {} bombs around at ({}, {})",
-                    n,
-                    coords.x,
-                    coords.y
-                );
-
-                // reveal neighboring tiles if this tile was already revealed
-            }
-            Tile::Bomb => {
-                log::info!(
-                    "Boom! You clicked on a bomb at ({}, {})",
-                    coords.x,
-                    coords.y
-                );
-
-                let explosion: Handle<Image> = asset_server.load("icons/explosion.png");
-
-                for child in children.iter() {
-                    if let Ok(mut sprite) = sprites.get_mut(child) {
-                        sprite.image = explosion.clone();
-                    }
+            match *tile {
+                Tile::Empty => {
+                    board.reveal_empty_neighbors(
+                        *coords,
+                        &mut tiles.transmute_lens(),
+                        &mut covered.transmute_lens(),
+                        &board,
+                        &mut commands,
+                        &mut Vec::new(),
+                    );
                 }
+                Tile::Neighbour(n) => {
+                    // reveal neighboring tiles if this tile was already revealed
+                }
+                Tile::Bomb => {
+                    let explosion: Handle<Image> = asset_server.load("icons/explosion.png");
 
-                commands
-                    .entity(entity)
-                    .insert(Sprite::from_color(BLACK, Vec2::splat(TILE_SIZE)));
+                    for child in children.iter() {
+                        if let Ok(mut sprite) = sprites.get_mut(child) {
+                            sprite.image = explosion.clone();
+                        }
+                    }
 
-                // Despawn all CoveredTile entities to reveal the board
-                for cover in &covered {
-                    commands.entity(cover).despawn();
+                    commands
+                        .entity(entity)
+                        .insert(Sprite::from_color(BLACK, Vec2::splat(TILE_SIZE)));
+
+                    // Despawn all CoveredTile entities to reveal the board
+                    for cover in &covered {
+                        commands.entity(cover).despawn();
+                    }
                 }
             }
         }
@@ -271,7 +311,7 @@ impl BoardPlugin {
                                 commands.spawn((
                                     Sprite::from_color(LIGHT_GREY, box_size),
                                     Transform::from_translation(Vec3::new(0.0, 0.0, 1.0)),
-                                    CoveredTile,
+                                    TileCover,
                                 ));
                                 match tile {
                                     Tile::Bomb => {

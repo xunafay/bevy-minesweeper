@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use rand::{Rng, rng};
 
-use crate::{coordinates::Coordinates, tile::Tile};
+use crate::components::{coordinates::Coordinates, tile::Tile};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TileMap {

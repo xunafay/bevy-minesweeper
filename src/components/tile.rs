@@ -32,4 +32,8 @@ impl Tile {
     pub(crate) fn is_empty(&self) -> bool {
         matches!(self, Tile::Empty)
     }
+
+    pub(crate) fn is_neighbour(&self) -> bool {
+        matches!(self, Tile::Neighbour(_))
+    }
 }
