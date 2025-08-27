@@ -198,6 +198,7 @@ impl BoardPlugin {
         let font: Handle<Font> = asset_server.load("fonts/ChakraPetch-Regular.ttf");
         let bomb: Handle<Image> = asset_server.load("icons/bomb.png");
         let cover: Handle<Image> = asset_server.load("icons/cover.png");
+        let uncovered: Handle<Image> = asset_server.load("icons/uncovered.png");
 
         let mut tile_map = TileMap::empty(20, 20);
         tile_map.set_bombs(50);
@@ -231,7 +232,7 @@ impl BoardPlugin {
                         let box_size = Vec2::new(TILE_SIZE, TILE_SIZE);
                         commands
                             .spawn((
-                                Sprite::from_color(GREY, box_size),
+                                Sprite::from_image(uncovered.clone()),
                                 Transform::from_translation(position),
                                 Name::new(format!("Tile ({}, {})", x, y)),
                                 Coordinates { x, y },
