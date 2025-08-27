@@ -1,4 +1,4 @@
-use bevy::{color::palettes::css::*, log, prelude::*};
+use bevy::{color::palettes::css::*, log, prelude::*, render::render_resource::Texture};
 
 use crate::{
     TILE_SIZE, TILE_SPACING,
@@ -232,7 +232,11 @@ impl BoardPlugin {
                         let box_size = Vec2::new(TILE_SIZE, TILE_SIZE);
                         commands
                             .spawn((
-                                Sprite::from_image(uncovered.clone()),
+                                Sprite {
+                                    custom_size: Some(box_size),
+                                    image: uncovered.clone(),
+                                    ..Default::default()
+                                },
                                 Transform::from_translation(position),
                                 Name::new(format!("Tile ({}, {})", x, y)),
                                 Coordinates { x, y },
