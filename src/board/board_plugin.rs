@@ -1,7 +1,7 @@
 use bevy::{color::palettes::css::*, log, prelude::*, render::render_resource::Texture};
 
 use crate::{
-    TILE_SIZE, TILE_SPACING,
+    BoardSettings, UiSettings,
     board::{
         board::Board, coordinates::Coordinates, flag::Flag, tile::Tile, tile_cover::TileCover,
         tile_map::TileMap,
@@ -14,7 +14,10 @@ pub struct BoardPlugin;
 impl Plugin for BoardPlugin {
     fn build(&self, app: &mut App) {
         app.insert_state::<AppState>(AppState::default())
-            .add_systems(OnEnter(AppState::InGame), Self::create_board)
+            .add_systems(
+                OnEnter(AppState::InGame),
+                (Self::clear_board, Self::create_board).chain(),
+            )
             .add_systems(
                 Update,
                 (
@@ -69,6 +72,7 @@ impl BoardPlugin {
         board: Single<&Board>,
         asset_server: Res<AssetServer>,
         mut commands: Commands,
+        ui_settings: Res<UiSettings>,
     ) {
         if !mouse_input.just_pressed(MouseButton::Right) {
             return;
@@ -86,7 +90,8 @@ impl BoardPlugin {
             .viewport_to_world_2d(camera_transform, cursor)
             .expect("Failed to convert viewport to world");
 
-        let clicked_tile = board.find_colliding_tile(world_position, &mut tiles.transmute_lens());
+        let clicked_tile =
+            board.find_colliding_tile(world_position, &mut tiles.transmute_lens(), &ui_settings);
         if clicked_tile.is_none() {
             log::info!("No tile found at position {:?}", world_position);
             return;
@@ -129,6 +134,8 @@ impl BoardPlugin {
         mut commands: Commands,
         asset_server: Res<AssetServer>,
         board: Single<&Board>,
+        ui_settings: Res<crate::UiSettings>,
+        mut next_state: ResMut<NextState<AppState>>,
     ) {
         if !mouse_input.just_pressed(MouseButton::Left) {
             return;
@@ -147,7 +154,8 @@ impl BoardPlugin {
             .viewport_to_world_2d(camera_transform, cursor)
             .expect("Failed to convert viewport to world");
 
-        let clicked_tile = board.find_colliding_tile(world_position, &mut tiles.transmute_lens());
+        let clicked_tile =
+            board.find_colliding_tile(world_position, &mut tiles.transmute_lens(), &ui_settings);
         if clicked_tile.is_none() {
             log::info!("No tile found at position {:?}", world_position);
             return;
@@ -181,27 +189,41 @@ impl BoardPlugin {
                         }
                     }
 
-                    commands
-                        .entity(entity)
-                        .insert(Sprite::from_color(BLACK, Vec2::splat(TILE_SIZE)));
+                    commands.entity(entity).insert(Sprite::from_color(
+                        BLACK,
+                        Vec2::splat(ui_settings.tile_size),
+                    ));
 
                     // Despawn all CoveredTile entities to reveal the board
                     for cover in &covered {
                         commands.entity(cover).despawn();
                     }
+
+                    next_state.set(AppState::Defeat);
                 }
             }
         }
     }
 
-    pub fn create_board(mut commands: Commands, asset_server: ResMut<AssetServer>) {
+    pub fn clear_board(mut commands: Commands, board_query: Query<Entity, With<Board>>) {
+        for entity in &board_query {
+            commands.entity(entity).despawn_recursive();
+        }
+    }
+
+    pub fn create_board(
+        mut commands: Commands,
+        asset_server: ResMut<AssetServer>,
+        ui_settings: Res<UiSettings>,
+        board_settings: Res<BoardSettings>,
+    ) {
         let font: Handle<Font> = asset_server.load("fonts/ChakraPetch-Regular.ttf");
         let bomb: Handle<Image> = asset_server.load("icons/bomb.png");
         let cover: Handle<Image> = asset_server.load("icons/cover.png");
         let uncovered: Handle<Image> = asset_server.load("icons/uncovered.png");
 
-        let mut tile_map = TileMap::empty(20, 20);
-        tile_map.set_bombs(50);
+        let mut tile_map = TileMap::empty(board_settings.board_width, board_settings.board_height);
+        tile_map.set_bombs(board_settings.mine_count);
         log::info!("{}", tile_map.console_output());
 
         commands
@@ -209,8 +231,12 @@ impl BoardPlugin {
                 Sprite::from_color(Color::WHITE, Vec2::ONE),
                 Transform {
                     translation: Vec3::new(
-                        -(tile_map.width as f32 * (TILE_SIZE + TILE_SPACING)) / 2.0,
-                        -(tile_map.height as f32 * (TILE_SIZE + TILE_SPACING)) / 2.0,
+                        -(tile_map.width as f32
+                            * (ui_settings.tile_size + ui_settings.tile_spacing))
+                            / 2.0,
+                        -(tile_map.height as f32
+                            * (ui_settings.tile_size + ui_settings.tile_spacing))
+                            / 2.0,
                         0.0,
                     ),
                     ..Default::default()
@@ -224,12 +250,12 @@ impl BoardPlugin {
                     for x in 0..tile_map.width {
                         let tile = tile_map.map[y as usize][x as usize];
                         let position = Vec3::new(
-                            x as f32 * (TILE_SIZE + TILE_SPACING),
-                            y as f32 * (TILE_SIZE + TILE_SPACING),
+                            x as f32 * (ui_settings.tile_size + ui_settings.tile_spacing),
+                            y as f32 * (ui_settings.tile_size + ui_settings.tile_spacing),
                             0.0,
                         );
 
-                        let box_size = Vec2::new(TILE_SIZE, TILE_SIZE);
+                        let box_size = Vec2::new(ui_settings.tile_size, ui_settings.tile_spacing);
                         commands
                             .spawn((
                                 Sprite {

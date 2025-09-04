@@ -1,7 +1,7 @@
 use bevy::{ecs::system::QueryLens, prelude::*};
 
 use crate::{
-    TILE_SIZE, TILE_SPACING,
+    UiSettings,
     board::{coordinates::Coordinates, tile::Tile, tile_map::TileMap},
     utils::bounds2::Bounds2,
 };
@@ -73,11 +73,12 @@ impl Board {
         &self,
         point: Vec2,
         tiles: &mut QueryLens<(Entity, &GlobalTransform)>,
+        ui_settings: &UiSettings,
     ) -> Option<Entity> {
         for (entity, transform) in &mut tiles.query() {
             let bounds = Bounds2::from_center_size(
                 transform.translation().truncate(),
-                Vec2::splat(TILE_SIZE + TILE_SPACING),
+                Vec2::splat(ui_settings.tile_size + ui_settings.tile_spacing),
             );
 
             if bounds.contains(point) {
