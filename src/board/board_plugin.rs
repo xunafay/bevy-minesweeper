@@ -255,7 +255,7 @@ impl BoardPlugin {
                             0.0,
                         );
 
-                        let box_size = Vec2::new(ui_settings.tile_size, ui_settings.tile_spacing);
+                        let box_size = Vec2::new(ui_settings.tile_size, ui_settings.tile_size);
                         commands
                             .spawn((
                                 Sprite {
