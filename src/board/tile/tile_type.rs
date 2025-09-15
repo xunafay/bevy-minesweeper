@@ -2,22 +2,22 @@ use bevy::ecs::component::Component;
 use colored::Colorize;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
-pub enum Tile {
+pub enum TileType {
     Empty,
     Bomb,
     Neighbour(u8),
 }
 
-impl Tile {
+impl TileType {
     pub fn is_bomb(&self) -> bool {
-        matches!(self, Tile::Bomb)
+        matches!(self, TileType::Bomb)
     }
 
     pub fn console_draw(&self) -> String {
         match self {
-            Tile::Empty => " ".to_string(),
-            Tile::Bomb => "*".to_string(),
-            Tile::Neighbour(n) => format!(
+            TileType::Empty => " ".to_string(),
+            TileType::Bomb => "*".to_string(),
+            TileType::Neighbour(n) => format!(
                 "{}",
                 match *n {
                     1 => "1".cyan(),
@@ -30,10 +30,10 @@ impl Tile {
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        matches!(self, Tile::Empty)
+        matches!(self, TileType::Empty)
     }
 
     pub(crate) fn is_neighbour(&self) -> bool {
-        matches!(self, Tile::Neighbour(_))
+        matches!(self, TileType::Neighbour(_))
     }
 }

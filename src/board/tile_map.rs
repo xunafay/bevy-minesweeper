@@ -4,7 +4,10 @@ use std::ops::{Deref, DerefMut};
 
 use rand::{Rng, rng};
 
-use crate::board::{coordinates::Coordinates, tile::Tile};
+use crate::board::{
+    coordinates::Coordinates,
+    tile::{tile::Tile, tile_state::TileState, tile_type::TileType},
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TileMap {
@@ -17,7 +20,7 @@ pub struct TileMap {
 impl TileMap {
     pub fn empty(width: u16, height: u16) -> Self {
         let map: Vec<Vec<Tile>> = (0..height)
-            .map(|_| (0..width).map(|_| Tile::Empty).collect::<Vec<Tile>>())
+            .map(|_| (0..width).map(|_| Tile::default()).collect::<Vec<Tile>>())
             .collect();
 
         Self {
@@ -40,7 +43,7 @@ impl TileMap {
         for line in self.iter().rev() {
             buffer = format!("{}|", buffer);
             for tile in line.iter() {
-                buffer = format!("{}{}", buffer, tile.console_draw());
+                buffer = format!("{}{}", buffer, tile.r#type.console_draw());
             }
             buffer = format!("{}|\n", buffer);
         }
@@ -59,7 +62,9 @@ impl TileMap {
             return false;
         }
 
-        self.map[coordinates.y as usize][coordinates.x as usize].is_bomb()
+        self.map[coordinates.y as usize][coordinates.x as usize]
+            .r#type
+            .is_bomb()
     }
 
     pub fn bomb_count_at(&self, coordinates: Coordinates) -> u8 {
@@ -86,13 +91,12 @@ impl TileMap {
                 rng.random_range(0..self.width) as usize,
                 rng.random_range(0..self.height) as usize,
             );
-            if let Tile::Empty = self[y][x] {
-                self[y][x] = Tile::Bomb;
+            if let TileType::Empty = self[y][x].r#type {
+                self[y][x].r#type = TileType::Bomb;
                 remaining_bombs -= 1;
             }
         }
 
-        // Update neighbors with bomb counts
         for y in 0..self.height {
             for x in 0..self.width {
                 let coords = Coordinates { x, y };
@@ -104,17 +108,112 @@ impl TileMap {
                     continue;
                 }
                 let tile = &mut self[y as usize][x as usize];
-                *tile = Tile::Neighbour(num);
+                tile.r#type = TileType::Neighbour(num);
             }
         }
     }
 
-    pub(crate) fn get_tile_at_coords(&self, coord: Coordinates) -> Option<Tile> {
+    pub(crate) fn at(&self, coord: Coordinates) -> Option<&Tile> {
         if coord.x >= self.width || coord.y >= self.height {
             return None;
         }
 
-        Some(self.map[coord.y as usize][coord.x as usize])
+        Some(&self.map[coord.y as usize][coord.x as usize])
+    }
+
+    pub fn at_mut(&mut self, coord: Coordinates) -> Option<&mut Tile> {
+        if coord.x >= self.width || coord.y >= self.height {
+            return None;
+        }
+
+        Some(&mut self.map[coord.y as usize][coord.x as usize])
+    }
+
+    pub fn coords_in_bounds(&self, coordinates: Coordinates) -> bool {
+        coordinates.x < self.width && coordinates.y < self.height
+    }
+
+    pub fn reveal_all(&mut self) {
+        for row in self.map.iter_mut() {
+            for tile in row.iter_mut() {
+                tile.reveal();
+            }
+        }
+    }
+
+    pub fn reveal_empty_neighbors(
+        &self,
+        coordinates: Coordinates,
+        revealed: &mut Vec<Coordinates>,
+    ) {
+        self.scan_map_at(coordinates).for_each(|coord| {
+            if !self.coords_in_bounds(coord) {
+                return;
+            }
+
+            if let Some(tile) = self.at(coord) {
+                if tile.r#type.is_empty() && !revealed.contains(&coord) {
+                    revealed.push(coord);
+                    self.reveal_empty_neighbors(coord, revealed);
+                } else if tile.r#type.is_neighbour() && !revealed.contains(&coord) {
+                    revealed.push(coord);
+                }
+            }
+        });
+    }
+
+    /// Reveals the neighbors of a given coordinate, returning a list of all revealed unflagged
+    /// bombs
+    pub fn reveal_neighbors(&self, coordinates: Coordinates) -> Vec<Coordinates> {
+        let mut revealed = Vec::new();
+        self.scan_map_at(coordinates).for_each(|coord| {
+            if !self.coords_in_bounds(coord) {
+                return;
+            }
+
+            if let Some(tile) = self.at(coord) {
+                if tile.r#type.is_bomb() && !revealed.contains(&coord) {
+                    revealed.push(coord);
+                } else if tile.r#type.is_empty() && !revealed.contains(&coord) {
+                    revealed.push(coord);
+                    self.reveal_empty_neighbors(coord, &mut revealed);
+                } else if tile.r#type.is_neighbour() && !revealed.contains(&coord) {
+                    revealed.push(coord);
+                }
+            }
+        });
+
+        revealed
+    }
+
+    pub fn has_won(&self) -> bool {
+        let mut hidden_tiles = 0;
+        let mut flagged_bombs = 0;
+
+        for row in self.map.iter() {
+            for tile in row.iter() {
+                if tile.state == TileState::Hidden {
+                    hidden_tiles += 1;
+                    if tile.r#type.is_bomb() {
+                        flagged_bombs += 1;
+                    }
+                }
+            }
+        }
+
+        hidden_tiles == self.bomb_count && flagged_bombs == self.bomb_count
+    }
+
+    pub fn has_lost(&self) -> bool {
+        for row in self.map.iter() {
+            for tile in row.iter() {
+                if tile.state == TileState::Exploded {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 }
 
