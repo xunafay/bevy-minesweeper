@@ -50,7 +50,10 @@ impl TileMap {
         format!("{}{}", buffer, line)
     }
 
-    pub fn scan_map_at(&self, coordinates: Coordinates) -> impl Iterator<Item = Coordinates> {
+    pub fn scan_map_at(
+        &self,
+        coordinates: Coordinates,
+    ) -> impl Iterator<Item = Coordinates> + use<> {
         SQUARE_COORDINATES
             .iter()
             .copied()
@@ -133,16 +136,20 @@ impl TileMap {
         coordinates.x < self.width && coordinates.y < self.height
     }
 
-    pub fn reveal_all(&mut self) {
+    pub fn reveal_all(&mut self, explode: bool) {
         for row in self.map.iter_mut() {
             for tile in row.iter_mut() {
-                tile.reveal();
+                if explode {
+                    tile.reveal();
+                } else {
+                    tile.reveal_without_exploding();
+                }
             }
         }
     }
 
     pub fn reveal_empty_neighbors(
-        &self,
+        &mut self,
         coordinates: Coordinates,
         revealed: &mut Vec<Coordinates>,
     ) {
@@ -151,10 +158,15 @@ impl TileMap {
                 return;
             }
 
-            if let Some(tile) = self.at(coord) {
-                if tile.r#type.is_empty() && !revealed.contains(&coord) {
+            if let Some(tile) = self.at_mut(coord) {
+                if (tile.r#type.is_empty() || tile.r#type.is_neighbour())
+                    && !revealed.contains(&coord)
+                {
+                    tile.reveal();
                     revealed.push(coord);
-                    self.reveal_empty_neighbors(coord, revealed);
+                    if tile.r#type.is_empty() {
+                        self.reveal_empty_neighbors(coord, revealed);
+                    }
                 } else if tile.r#type.is_neighbour() && !revealed.contains(&coord) {
                     revealed.push(coord);
                 }
@@ -164,26 +176,24 @@ impl TileMap {
 
     /// Reveals the neighbors of a given coordinate, returning a list of all revealed unflagged
     /// bombs
-    pub fn reveal_neighbors(&self, coordinates: Coordinates) -> Vec<Coordinates> {
-        let mut revealed = Vec::new();
+    pub fn reveal_neighbors(&mut self, coordinates: Coordinates) -> Vec<Coordinates> {
+        let mut revealed_bombs = Vec::new();
         self.scan_map_at(coordinates).for_each(|coord| {
             if !self.coords_in_bounds(coord) {
                 return;
             }
 
-            if let Some(tile) = self.at(coord) {
-                if tile.r#type.is_bomb() && !revealed.contains(&coord) {
-                    revealed.push(coord);
-                } else if tile.r#type.is_empty() && !revealed.contains(&coord) {
-                    revealed.push(coord);
-                    self.reveal_empty_neighbors(coord, &mut revealed);
-                } else if tile.r#type.is_neighbour() && !revealed.contains(&coord) {
-                    revealed.push(coord);
+            if let Some(tile) = self.at_mut(coord) {
+                tile.reveal();
+                if tile.r#type.is_bomb() && tile.state != TileState::Flagged {
+                    revealed_bombs.push(coord);
+                } else if tile.r#type.is_empty() {
+                    self.reveal_empty_neighbors(coord, &mut revealed_bombs);
                 }
             }
         });
 
-        revealed
+        revealed_bombs
     }
 
     pub fn has_won(&self) -> bool {
@@ -192,16 +202,17 @@ impl TileMap {
 
         for row in self.map.iter() {
             for tile in row.iter() {
-                if tile.state == TileState::Hidden {
+                if tile.r#type.is_bomb() && tile.state == TileState::Flagged {
+                    flagged_bombs += 1;
+                }
+
+                if !tile.r#type.is_bomb() && tile.state == TileState::Hidden {
                     hidden_tiles += 1;
-                    if tile.r#type.is_bomb() {
-                        flagged_bombs += 1;
-                    }
                 }
             }
         }
 
-        hidden_tiles == self.bomb_count && flagged_bombs == self.bomb_count
+        hidden_tiles == 0 && self.bomb_count == flagged_bombs
     }
 
     pub fn has_lost(&self) -> bool {

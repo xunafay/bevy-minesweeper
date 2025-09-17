@@ -30,7 +30,8 @@ impl Plugin for BoardPlugin {
                     Self::update_board,
                 )
                     .run_if(in_state(AppState::InGame)),
-            );
+            )
+            .add_systems(OnEnter(AppState::Defeat), Self::update_board);
     }
 }
 
@@ -45,7 +46,7 @@ impl BoardPlugin {
         mouse_input: Res<ButtonInput<MouseButton>>,
         windows: Query<&Window>,
         camera: Query<(&Camera, &GlobalTransform)>,
-        mut tiles: Query<(Entity, &GlobalTransform)>,
+        mut tiles: Query<(Entity, &GlobalTransform, &Coordinates)>,
         mut board: Single<&mut Board>,
         ui_settings: Res<UiSettings>,
     ) {
@@ -123,14 +124,7 @@ impl BoardPlugin {
             }
 
             if tile.state == TileState::Revealed {
-                let revealed_bombs = board.tile_map.reveal_neighbors(coords);
-                if !revealed_bombs.is_empty() {
-                    log::info!(
-                        "Revealed {} bombs around {:?}",
-                        revealed_bombs.len(),
-                        coords
-                    );
-                }
+                let _ = board.tile_map.reveal_neighbors(coords);
                 return;
             }
 
@@ -153,52 +147,76 @@ impl BoardPlugin {
         }
     }
 
-    pub fn defeat_validation(board: Single<&Board>, mut next_state: ResMut<NextState<AppState>>) {
+    pub fn defeat_validation(
+        mut board: Single<&mut Board>,
+        mut next_state: ResMut<NextState<AppState>>,
+    ) {
         if board.tile_map.has_lost() {
+            board.tile_map.reveal_all(false);
             next_state.set(AppState::Defeat);
         }
     }
 
     pub fn update_board(
         board: Single<&mut Board>,
-        mut tile_background: Query<
-            (
-                Entity,
-                &GlobalTransform,
-                &Coordinates,
-                &mut Sprite,
-                &Children,
-                &TileBackground,
-            ),
-            Without<TileForeground>,
+        tile_background: Query<
+            (Entity, &GlobalTransform, &Coordinates, &Children),
+            With<TileImageState>,
         >,
-        mut tile_foregrounds: Query<&mut Sprite, With<TileForeground>>,
-        asset_server: ResMut<AssetServer>,
+        mut tile_foregrounds: Query<Entity, With<TileImageMarker>>,
+        ui_settings: Res<UiSettings>,
         mut commands: Commands,
+        sprites: Res<Sprites>,
     ) {
-        let explosion: Handle<Image> = asset_server.load("icons/explosion.png");
-        let flag: Handle<Image> = asset_server.load("icons/flag.png");
-        let cover: Handle<Image> = asset_server.load("icons/cover.png");
-        let uncovered: Handle<Image> = asset_server.load("icons/uncovered.png");
-        let bomb: Handle<Image> = asset_server.load("icons/bomb.png");
-        let font: Handle<Font> = asset_server.load("fonts/ChakraPetch-Regular.ttf");
+        let box_size = Vec2::new(ui_settings.tile_size, ui_settings.tile_size);
 
-        for (entity, _, coords, mut sprite, children, _) in &mut tile_background {
+        for (image_state_entity, _, coords, children) in &tile_background {
             if let Some(tile) = board.tile_map.at(*coords) {
-                let mut tile_foreground = tile_foregrounds
+                let image_marker_entity = tile_foregrounds
                     .get_mut(children[0])
                     .expect("Failed to get tile top sprite");
 
                 match tile.state {
-                    TileState::Hidden => sprite.image = cover.clone(),
-                    TileState::Flagged => tile_foreground.image = flag.clone(),
-                    TileState::Exploded => tile_foreground.image = explosion.clone(),
+                    TileState::Hidden => {
+                        commands.entity(image_state_entity).insert(Sprite {
+                            custom_size: Some(box_size),
+                            image: sprites.cover.clone(),
+                            ..Default::default()
+                        });
+
+                        commands.entity(image_marker_entity).remove::<Sprite>();
+                    }
+                    TileState::Flagged => {
+                        commands.entity(image_marker_entity).insert(Sprite {
+                            custom_size: Some(box_size),
+                            image: sprites.flag.clone(),
+                            ..Default::default()
+                        });
+                    }
+                    TileState::Exploded => {
+                        commands.entity(image_marker_entity).insert(Sprite {
+                            custom_size: Some(box_size),
+                            image: sprites.explosion.clone(),
+                            ..Default::default()
+                        });
+                    }
                     TileState::Revealed => {
-                        sprite.image = uncovered.clone();
+                        commands.entity(image_state_entity).insert(Sprite {
+                            custom_size: Some(box_size),
+                            image: sprites.uncovered.clone(),
+                            ..Default::default()
+                        });
+
                         match tile.r#type {
-                            TileType::Bomb => tile_foreground.image = bomb.clone(),
+                            TileType::Bomb => {
+                                commands.entity(image_marker_entity).insert(Sprite {
+                                    custom_size: Some(box_size),
+                                    image: sprites.bomb.clone(),
+                                    ..Default::default()
+                                });
+                            }
                             TileType::Neighbour(n) => {
-                                commands.entity(entity).with_child((
+                                commands.entity(image_marker_entity).with_child((
                                     Text2d::new(n.to_string()),
                                     TextColor(match n {
                                         1 => BLUE.into(),
@@ -206,7 +224,7 @@ impl BoardPlugin {
                                         3 => ORANGE.into(),
                                         _ => RED.into(),
                                     }),
-                                    TextFont::from_font(font.clone()).with_font_size(24.0),
+                                    TextFont::from_font(sprites.font.clone()).with_font_size(24.0),
                                     TextLayout::new_with_justify(JustifyText::Center),
                                 ));
                             }
@@ -224,7 +242,21 @@ impl BoardPlugin {
         ui_settings: Res<UiSettings>,
         board_settings: Res<BoardSettings>,
     ) {
+        let explosion: Handle<Image> = asset_server.load("icons/explosion.png");
+        let flag: Handle<Image> = asset_server.load("icons/flag.png");
+        let uncovered: Handle<Image> = asset_server.load("icons/uncovered.png");
+        let bomb: Handle<Image> = asset_server.load("icons/bomb.png");
+        let font: Handle<Font> = asset_server.load("fonts/ChakraPetch-Regular.ttf");
         let cover: Handle<Image> = asset_server.load("icons/cover.png");
+
+        commands.insert_resource(Sprites {
+            explosion: explosion.clone(),
+            flag: flag.clone(),
+            cover: cover.clone(),
+            uncovered: uncovered.clone(),
+            bomb: bomb.clone(),
+            font: font.clone(),
+        });
 
         let mut tile_map = TileMap::empty(board_settings.board_width, board_settings.board_height);
         tile_map.set_bombs(board_settings.mine_count);
@@ -259,7 +291,6 @@ impl BoardPlugin {
             .with_children(|commands| {
                 for y in 0..tile_map.height {
                     for x in 0..tile_map.width {
-                        let tile = tile_map.map[y as usize][x as usize];
                         let position = Vec3::new(
                             x as f32 * (ui_settings.tile_size + ui_settings.tile_spacing),
                             y as f32 * (ui_settings.tile_size + ui_settings.tile_spacing),
@@ -274,19 +305,16 @@ impl BoardPlugin {
                                     image: cover.clone(),
                                     ..Default::default()
                                 },
-                                TileBackground,
+                                TileImageState,
                                 Transform::from_translation(position),
                                 Name::new(format!("Tile ({}, {})", x, y)),
                                 Coordinates { x, y },
                             ))
                             .with_children(|commands| {
                                 commands.spawn((
-                                    Sprite {
-                                        custom_size: Some(box_size),
-                                        ..Default::default()
-                                    },
-                                    TileForeground,
+                                    TileImageMarker,
                                     Transform::from_translation(Vec3::new(0.0, 0.0, 1.0)),
+                                    Visibility::default(),
                                 ));
                             });
                     }
@@ -296,7 +324,17 @@ impl BoardPlugin {
 }
 
 #[derive(Component)]
-pub struct TileBackground;
+pub struct TileImageState;
 
 #[derive(Component)]
-pub struct TileForeground;
+pub struct TileImageMarker;
+
+#[derive(Resource)]
+pub struct Sprites {
+    pub explosion: Handle<Image>,
+    pub flag: Handle<Image>,
+    pub cover: Handle<Image>,
+    pub uncovered: Handle<Image>,
+    pub bomb: Handle<Image>,
+    pub font: Handle<Font>,
+}
