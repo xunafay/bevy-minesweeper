@@ -5,6 +5,7 @@ use crate::{
     board::{
         board::Board,
         coordinates::Coordinates,
+        sprites::Sprites,
         tile::{tile_state::TileState, tile_type::TileType},
         tile_map::TileMap,
     },
@@ -328,13 +329,3 @@ pub struct TileImageState;
 
 #[derive(Component)]
 pub struct TileImageMarker;
-
-#[derive(Resource)]
-pub struct Sprites {
-    pub explosion: Handle<Image>,
-    pub flag: Handle<Image>,
-    pub cover: Handle<Image>,
-    pub uncovered: Handle<Image>,
-    pub bomb: Handle<Image>,
-    pub font: Handle<Font>,
-}
