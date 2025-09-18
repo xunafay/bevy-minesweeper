@@ -39,7 +39,7 @@ jobs:
   release-wasm:
     runs-on: ubuntu-latest
     needs: create-release
-
+    if: false  # Disable wasm build for now, as it is not currently supported
     steps:
       - uses: olegtarasov/get-tag@v2.1.2
         id: get_version
@@ -102,6 +102,7 @@ jobs:
       - name: Prepare package
         run: |
           mkdir linux
+          rm -r target/x86_64-unknown-linux-gnu/release/deps/ target/x86_64-unknown-linux-gnu/release/incremental/ target/x86_64-unknown-linux-gnu/release/.fingerprint/ target/x86_64-unknown-linux-gnu/release/build/ target/x86_64-unknown-linux-gnu/release/examples/ || true
           cp -r target/x86_64-unknown-linux-gnu/release/* linux/
           cp -r assets linux/ || true
 
@@ -147,6 +148,7 @@ jobs:
       - name: Prepare package
         run: |
           mkdir windows
+          rm -r target/x86_64-pc-windows-gnu/release/deps/ target/x86_64-pc-windows-gnu/release/incremental/ target/x86_64-pc-windows-gnu/release/.fingerprint/ target/x86_64-pc-windows-gnu/release/build/ target/x86_64-pc-windows-gnu/release/examples/ || true
           cp -r target/x86_64-pc-windows-gnu/release/* windows/
           cp -r assets windows/ || true
 
@@ -194,6 +196,7 @@ jobs:
       - name: Prepare package
         run: |
           mkdir -p ${{ env.binary }}.app/Contents/MacOS
+          rm -r target/x86_64-apple-darwin/release/deps/ target/x86_64-apple-darwin/release/incremental/ target/x86_64-apple-darwin/release/.fingerprint/ target/x86_64-apple-darwin/release/build/ target/x86_64-apple-darwin/release/examples/ || true
           cp -r target/x86_64-apple-darwin/release/* ${{ env.binary }}.app/Contents/MacOS/
           cp -r assets ${{ env.binary }}.app/Contents/MacOS/ || true
           hdiutil create -fs HFS+ -volname "${{ env.binary }}" -srcfolder ${{ env.binary }}.app ${{ env.binary }}-macOS-intel.dmg
@@ -237,6 +240,7 @@ jobs:
       - name: Prepare package
         run: |
           mkdir -p ${{ env.binary }}.app/Contents/MacOS
+          rm -r target/aarch64-apple-darwin/release/deps/ target/aarch64-apple-darwin/release/incremental/ target/aarch64-apple-darwin/release/.fingerprint/ target/aarch64-apple-darwin/release/build/ target/aarch64-apple-darwin/release/examples/ || true
           cp -r target/aarch64-apple-darwin/release/* ${{ env.binary }}.app/Contents/MacOS/
           cp -r assets ${{ env.binary }}.app/Contents/MacOS/ || true
           hdiutil create -fs HFS+ -volname "${{ env.binary }}-macOS-apple-silicon" -srcfolder ${{ env.binary }}.app ${{ env.binary }}-macOS-apple-silicon.dmg
@@ -259,6 +263,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   check-if-upload-to-itch-is-configured:
+    if: false
     runs-on: ubuntu-latest
     outputs:
       should-upload: ${{ steps.check-env.outputs.has-itch-target }}

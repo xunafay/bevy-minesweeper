@@ -4,13 +4,28 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.16.1" }
+bevy = { version = "0.16.1", default-features = false, features = [
+    "bevy_winit",
+    "bevy_render",
+    "bevy_sprite",
+    "bevy_ui",
+    "x11",
+    "bevy_state",
+    "wayland",
+    "multi_threaded",
+    "default_font",
+    "bevy_log",
+    "bevy_asset",
+    "bevy_color",
+    "std",
+    "png",
+] }
 colored = "3.0.0"
 rand = "0.9.2"
 
 [features]
-default = ["fast-compile"]
-fast-compile = ["bevy/dynamic_linking"]
+default = ["dynamic_linking"]
+dynamic_linking = ["bevy/dynamic_linking"]
 
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]
@@ -27,7 +42,8 @@ opt-level = 3
 codegen-units = 1
 # Do a second optimization pass over the entire program, including dependencies.
 # Slows compile times, marginal improvements.
-lto = "thin"
+opt-level = "z"
+lto = "fat"
 strip = true
 
 # Optimize for size in the wasm-release profile to reduce load times and bandwidth usage on web.
