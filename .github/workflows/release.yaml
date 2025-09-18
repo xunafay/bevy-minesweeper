@@ -15,7 +15,6 @@ env:
 
 jobs:
 
-  # Create the GitHub release once
   create-release:
     runs-on: ubuntu-latest
     outputs:
@@ -35,56 +34,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Build for wasm
-  release-wasm:
-    runs-on: ubuntu-latest
-    needs: create-release
-    if: false  # Disable wasm build for now, as it is not currently supported
-    steps:
-      - uses: olegtarasov/get-tag@v2.1.2
-        id: get_version
-      - uses: actions/checkout@v4
-        with:
-          lfs: ${{ env.use_git_lfs }}
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - run: cargo install wasm-bindgen-cli
-
-      - name: Build
-        run: cargo build --release --target wasm32-unknown-unknown --no-default-features
-
-      - name: Prepare package
-        run: |
-          wasm-bindgen --no-typescript --out-name bevy_game --out-dir wasm --target web target/wasm32-unknown-unknown/release/${{ env.binary }}.wasm
-          cp -r assets wasm/ || true
-
-      - name: Package as a zip
-        working-directory: ./wasm
-        run: zip --recurse-paths ../${{ env.binary }}.zip .
-
-      - uses: actions/upload-artifact@v4
-        with:
-          path: ${{ env.binary }}.zip
-          name: wasm
-          retention-days: 1
-
-      - name: Upload to release
-        if: ${{ env.add_binaries_to_github_release == 'true' }}
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./${{ env.binary }}.zip
-          asset_name: ${{ env.binary }}-wasm-${{ steps.get_version.outputs.tag }}.zip
-          asset_content_type: application/zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Build for Linux
   release-linux:
     runs-on: ubuntu-latest
     needs: create-release
-
     steps:
       - uses: olegtarasov/get-tag@v2.1.2
         id: get_version
@@ -94,6 +46,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y pkg-config libx11-dev libasound2-dev libudev-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
 
       - name: Build
@@ -102,8 +55,8 @@ jobs:
       - name: Prepare package
         run: |
           mkdir linux
-          rm -r target/x86_64-unknown-linux-gnu/release/deps/ target/x86_64-unknown-linux-gnu/release/incremental/ target/x86_64-unknown-linux-gnu/release/.fingerprint/ target/x86_64-unknown-linux-gnu/release/build/ target/x86_64-unknown-linux-gnu/release/examples/ || true
-          cp -r target/x86_64-unknown-linux-gnu/release/* linux/
+          # copy only top-level files, skip subdirs
+          find target/x86_64-unknown-linux-gnu/release -maxdepth 1 -type f -exec cp {} linux/ \;
           cp -r assets linux/ || true
 
       - name: Package as a zip
@@ -127,11 +80,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Build for Windows
   release-windows:
     runs-on: windows-latest
     needs: create-release
-
     steps:
       - uses: olegtarasov/get-tag@v2.1.2
         id: get_version
@@ -141,16 +92,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-gnu
+      - uses: Swatinem/rust-cache@v2
 
       - name: Build
         run: cargo build --release --target x86_64-pc-windows-gnu --no-default-features
 
       - name: Prepare package
+        shell: pwsh
         run: |
           mkdir windows
-          rm -r target/x86_64-pc-windows-gnu/release/deps/ target/x86_64-pc-windows-gnu/release/incremental/ target/x86_64-pc-windows-gnu/release/.fingerprint/ target/x86_64-pc-windows-gnu/release/build/ target/x86_64-pc-windows-gnu/release/examples/ || true
-          cp -r target/x86_64-pc-windows-gnu/release/* windows/
-          cp -r assets windows/ || true
+          Get-ChildItem -Path target/x86_64-pc-windows-gnu/release -File | Copy-Item -Destination windows/
+          if (Test-Path assets) { Copy-Item assets windows -Recurse }
 
       - name: Package as a zip
         run: Compress-Archive -Path windows/* -DestinationPath ${{ env.binary }}.zip
@@ -172,11 +124,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Build for macOS Intel
   release-macOS-intel:
     runs-on: macOS-latest
     needs: create-release
-
     steps:
       - uses: olegtarasov/get-tag@v2.1.2
         id: get_version
@@ -186,6 +136,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
       - run: |
           export CFLAGS="-fno-stack-check"
           export MACOSX_DEPLOYMENT_TARGET="10.9"
@@ -196,8 +147,7 @@ jobs:
       - name: Prepare package
         run: |
           mkdir -p ${{ env.binary }}.app/Contents/MacOS
-          rm -r target/x86_64-apple-darwin/release/deps/ target/x86_64-apple-darwin/release/incremental/ target/x86_64-apple-darwin/release/.fingerprint/ target/x86_64-apple-darwin/release/build/ target/x86_64-apple-darwin/release/examples/ || true
-          cp -r target/x86_64-apple-darwin/release/* ${{ env.binary }}.app/Contents/MacOS/
+          find target/x86_64-apple-darwin/release -maxdepth 1 -type f -exec cp {} ${{ env.binary }}.app/Contents/MacOS/ \;
           cp -r assets ${{ env.binary }}.app/Contents/MacOS/ || true
           hdiutil create -fs HFS+ -volname "${{ env.binary }}" -srcfolder ${{ env.binary }}.app ${{ env.binary }}-macOS-intel.dmg
 
@@ -218,11 +168,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Build for macOS Apple Silicon
   release-macOS-apple-silicon:
     runs-on: macOS-latest
     needs: create-release
-
     steps:
       - uses: olegtarasov/get-tag@v2.1.2
         id: get_version
@@ -232,6 +180,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
       - run: export MACOSX_DEPLOYMENT_TARGET="11"
 
       - name: Build
@@ -240,8 +189,7 @@ jobs:
       - name: Prepare package
         run: |
           mkdir -p ${{ env.binary }}.app/Contents/MacOS
-          rm -r target/aarch64-apple-darwin/release/deps/ target/aarch64-apple-darwin/release/incremental/ target/aarch64-apple-darwin/release/.fingerprint/ target/aarch64-apple-darwin/release/build/ target/aarch64-apple-darwin/release/examples/ || true
-          cp -r target/aarch64-apple-darwin/release/* ${{ env.binary }}.app/Contents/MacOS/
+          find target/aarch64-apple-darwin/release -maxdepth 1 -type f -exec cp {} ${{ env.binary }}.app/Contents/MacOS/ \;
           cp -r assets ${{ env.binary }}.app/Contents/MacOS/ || true
           hdiutil create -fs HFS+ -volname "${{ env.binary }}-macOS-apple-silicon" -srcfolder ${{ env.binary }}.app ${{ env.binary }}-macOS-apple-silicon.dmg
 
@@ -261,56 +209,3 @@ jobs:
           asset_content_type: application/x-apple-diskimage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  check-if-upload-to-itch-is-configured:
-    if: false
-    runs-on: ubuntu-latest
-    outputs:
-      should-upload: ${{ steps.check-env.outputs.has-itch-target }}
-    steps:
-      - id: check-env
-        run: |
-          if [[ -z "$itch_target" ]]; then
-            echo "has-itch-target=no" >> $GITHUB_OUTPUT
-          else
-            echo "has-itch-target=yes" >> $GITHUB_OUTPUT
-
-  upload-to-itch:
-    runs-on: ubuntu-latest
-    needs:
-      - check-if-upload-to-itch-is-configured
-      - release-wasm
-      - release-linux
-      - release-windows
-      - release-macOS-intel
-      - release-macOS-apple-silicon
-    if: ${{ needs.check-if-upload-to-itch-is-configured.outputs.should-upload == 'yes' }}
-
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: ./builds
-
-      - name: Install butler
-        run: |
-          curl -L -o butler.zip https://broth.itch.ovh/butler/linux-amd64/LATEST/archive/default
-          unzip butler.zip
-          chmod +x butler
-          ./butler -V
-
-      - uses: olegtarasov/get-tag@v2.1.2
-        id: get_version
-
-      - name: Upload to itch.io
-        env:
-          BUTLER_API_KEY: ${{ secrets.BUTLER_CREDENTIALS }}
-        run: |
-          for channel in $(ls builds); do
-            ./butler push \
-                --fix-permissions \
-                --userversion="${{ steps.get_version.outputs.tag }}" \
-                builds/$channel/* \
-                ${{ env.itch_target }}:$channel
-          done
-
