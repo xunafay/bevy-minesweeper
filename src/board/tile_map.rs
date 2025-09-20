@@ -116,7 +116,7 @@ impl TileMap {
         }
     }
 
-    pub(crate) fn at(&self, coord: Coordinates) -> Option<&Tile> {
+    pub(crate) fn at(&self, coord: &Coordinates) -> Option<&Tile> {
         if coord.x >= self.width || coord.y >= self.height {
             return None;
         }
@@ -124,7 +124,7 @@ impl TileMap {
         Some(&self.map[coord.y as usize][coord.x as usize])
     }
 
-    pub fn at_mut(&mut self, coord: Coordinates) -> Option<&mut Tile> {
+    pub fn at_mut(&mut self, coord: &Coordinates) -> Option<&mut Tile> {
         if coord.x >= self.width || coord.y >= self.height {
             return None;
         }
@@ -158,7 +158,7 @@ impl TileMap {
                 return;
             }
 
-            if let Some(tile) = self.at_mut(coord) {
+            if let Some(tile) = self.at_mut(&coord) {
                 if (tile.r#type.is_empty() || tile.r#type.is_neighbour())
                     && !revealed.contains(&coord)
                 {
@@ -183,7 +183,7 @@ impl TileMap {
                 return;
             }
 
-            if let Some(tile) = self.at_mut(coord) {
+            if let Some(tile) = self.at_mut(&coord) {
                 tile.reveal();
                 if tile.r#type.is_bomb() && tile.state != TileState::Flagged {
                     revealed_bombs.push(coord);
@@ -225,6 +225,12 @@ impl TileMap {
         }
 
         false
+    }
+
+    pub(crate) fn is_pristine(&self) -> bool {
+        return self
+            .iter()
+            .all(|row| row.iter().all(|tile| tile.state == TileState::Hidden));
     }
 }
 

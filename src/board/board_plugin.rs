@@ -1,4 +1,4 @@
-use bevy::{color::palettes::css::*, log, prelude::*};
+use bevy::{color::palettes::css::*, ecs::system::QueryLens, log, prelude::*};
 
 use crate::{
     BoardSettings, UiSettings,
@@ -25,7 +25,7 @@ impl Plugin for BoardPlugin {
             .add_systems(
                 Update,
                 (
-                    Self::left_click_tile,
+                    (Self::find_safe_start, Self::left_click_tile).chain(),
                     Self::right_click_tile,
                     Self::victory_validation,
                     Self::defeat_validation,
@@ -38,6 +38,76 @@ impl Plugin for BoardPlugin {
 }
 
 impl BoardPlugin {
+    fn get_tile_coords(
+        windows: Query<&Window>,
+        mut camera_query_lens: QueryLens<(&Camera, &GlobalTransform)>,
+        mut tiles: QueryLens<(Entity, &GlobalTransform, &Coordinates)>,
+        board: &Board,
+        ui_settings: &Res<UiSettings>,
+    ) -> Option<Coordinates> {
+        let window = windows.single().expect("No window found");
+        let camera_query = camera_query_lens.query();
+        let (camera, camera_transform) = camera_query.single().expect("No camera found");
+        let cursor = window.cursor_position();
+        if cursor.is_none() {
+            return None;
+        }
+        let cursor = cursor.unwrap();
+        let world_position = camera
+            .viewport_to_world_2d(camera_transform, cursor)
+            .expect("Failed to convert viewport to world");
+        let Some((_, coords)) = board.find_colliding_tile_coords(
+            world_position,
+            &mut tiles.query().transmute_lens(),
+            &ui_settings,
+        ) else {
+            log::info!("No tile found at position {:?}", world_position);
+            return None;
+        };
+
+        Some(coords.clone())
+    }
+
+    /// When the first tile is clicked, generate new boards until there is at least one empty tile under the cursor
+    pub fn find_safe_start(
+        mouse_input: Res<ButtonInput<MouseButton>>,
+        windows: Query<&Window>,
+        mut camera: Query<(&Camera, &GlobalTransform)>,
+        board: Single<&mut Board>,
+        mut tiles: Query<(Entity, &GlobalTransform, &Coordinates)>,
+        ui_settings: Res<UiSettings>,
+    ) {
+        if !board.tile_map.is_pristine() {
+            return;
+        }
+
+        if !mouse_input.just_pressed(MouseButton::Left) {
+            return;
+        }
+
+        let mut board = board.into_inner();
+        let Some(coords) = Self::get_tile_coords(
+            windows,
+            camera.transmute_lens(),
+            tiles.transmute_lens(),
+            &board,
+            &ui_settings,
+        ) else {
+            return;
+        };
+
+        while let Some(tile) = board.tile_map.at(&coords) {
+            if tile.r#type.is_empty() {
+                break;
+            }
+
+            log::info!("Regenerating board for safe start...");
+            let bomb_count = board.tile_map.bomb_count;
+            board.tile_map = TileMap::empty(board.tile_map.width, board.tile_map.height);
+            board.tile_map.set_bombs(bomb_count);
+        }
+    }
+
     pub fn victory_validation(board: Single<&Board>, mut next_state: ResMut<NextState<AppState>>) {
         if board.tile_map.has_won() {
             next_state.set(AppState::Victory);
@@ -47,7 +117,7 @@ impl BoardPlugin {
     pub fn right_click_tile(
         mouse_input: Res<ButtonInput<MouseButton>>,
         windows: Query<&Window>,
-        camera: Query<(&Camera, &GlobalTransform)>,
+        mut camera: Query<(&Camera, &GlobalTransform)>,
         mut tiles: Query<(Entity, &GlobalTransform, &Coordinates)>,
         mut board: Single<&mut Board>,
         ui_settings: Res<UiSettings>,
@@ -55,29 +125,18 @@ impl BoardPlugin {
         if !mouse_input.just_pressed(MouseButton::Right) {
             return;
         }
-        let window = windows.single().expect("No window found");
-        let (camera, camera_transform) = camera.single().expect("No camera found");
 
-        let cursor = window.cursor_position();
-        if cursor.is_none() {
-            return;
-        }
-        let cursor = cursor.unwrap();
-
-        let world_position = camera
-            .viewport_to_world_2d(camera_transform, cursor)
-            .expect("Failed to convert viewport to world");
-
-        let Some((_, coords)) = board.find_colliding_tile_coords(
-            world_position,
-            &mut tiles.transmute_lens(),
+        let Some(coords) = Self::get_tile_coords(
+            windows,
+            camera.transmute_lens(),
+            tiles.transmute_lens(),
+            &board,
             &ui_settings,
         ) else {
-            log::info!("No tile found at position {:?}", world_position);
             return;
         };
 
-        if let Some(tile) = board.tile_map.at_mut(coords) {
+        if let Some(tile) = board.tile_map.at_mut(&coords) {
             if tile.state == TileState::Revealed || tile.state == TileState::Exploded {
                 return;
             }
@@ -89,7 +148,7 @@ impl BoardPlugin {
     pub fn left_click_tile(
         mouse_input: Res<ButtonInput<MouseButton>>,
         windows: Query<&Window>,
-        camera: Query<(&Camera, &GlobalTransform)>,
+        mut camera: Query<(&Camera, &GlobalTransform)>,
         mut tiles: Query<(Entity, &GlobalTransform, &Coordinates)>,
         mut board: Single<&mut Board>,
         ui_settings: Res<crate::UiSettings>,
@@ -98,29 +157,17 @@ impl BoardPlugin {
             return;
         }
 
-        let window = windows.single().expect("No window found");
-        let (camera, camera_transform) = camera.single().expect("No camera found");
-
-        let cursor = window.cursor_position();
-        if cursor.is_none() {
-            return;
-        }
-        let cursor = cursor.unwrap();
-
-        let world_position = camera
-            .viewport_to_world_2d(camera_transform, cursor)
-            .expect("Failed to convert viewport to world");
-
-        let Some((_, coords)) = board.find_colliding_tile_coords(
-            world_position,
-            &mut tiles.transmute_lens(),
+        let Some(coords) = Self::get_tile_coords(
+            windows,
+            camera.transmute_lens(),
+            tiles.transmute_lens(),
+            &board,
             &ui_settings,
         ) else {
-            log::info!("No tile found at position {:?}", world_position);
             return;
         };
 
-        if let Some(tile) = board.tile_map.at_mut(coords) {
+        if let Some(tile) = board.tile_map.at_mut(&coords) {
             if tile.state == TileState::Flagged || tile.state == TileState::Exploded {
                 return;
             }
@@ -173,7 +220,7 @@ impl BoardPlugin {
         let box_size = Vec2::new(ui_settings.tile_size, ui_settings.tile_size);
 
         for (image_state_entity, _, coords, children) in &tile_background {
-            if let Some(tile) = board.tile_map.at(*coords) {
+            if let Some(tile) = board.tile_map.at(coords) {
                 let image_marker_entity = tile_foregrounds
                     .get_mut(children[0])
                     .expect("Failed to get tile top sprite");
