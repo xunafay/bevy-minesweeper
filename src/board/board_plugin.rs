@@ -17,6 +17,7 @@ pub struct BoardPlugin;
 impl Plugin for BoardPlugin {
     fn build(&self, app: &mut App) {
         app.insert_state::<AppState>(AppState::default())
+            .add_systems(OnEnter(AppState::MainMenu), Self::clear_board)
             .add_systems(
                 OnEnter(AppState::InGame),
                 (Self::clear_board, Self::create_board).chain(),

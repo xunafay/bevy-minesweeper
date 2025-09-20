@@ -1,6 +1,6 @@
-use bevy::{log, prelude::*};
+use bevy::{log, prelude::*, state::commands};
 
-use crate::{ui::menu_data::MenuData, utils::app_state::AppState};
+use crate::{board::settings::BoardSettings, ui::menu_data::MenuData, utils::app_state::AppState};
 
 pub struct UiPlugin;
 
@@ -19,26 +19,67 @@ impl Plugin for UiPlugin {
 #[derive(Component)]
 pub struct MenuRoot;
 
+#[derive(Component, PartialEq, Eq, Debug)]
+pub enum ButtonType {
+    Easy,
+    Medium,
+    Hard,
+    MainMenu,
+}
+
 impl UiPlugin {
     pub fn menu(
         mut next_state: ResMut<NextState<AppState>>,
         current_state: Res<State<AppState>>,
-        mut interaction_query: Query<&Interaction, (Changed<Interaction>, With<Button>)>,
+        mut interaction_query: Query<
+            (&Interaction, &ButtonType),
+            (Changed<Interaction>, With<Button>),
+        >,
+        mut commands: Commands,
     ) {
-        for interaction in &mut interaction_query {
+        for (interaction, button_type) in &mut interaction_query {
             match *interaction {
                 Interaction::Pressed => match current_state.get() {
                     AppState::MainMenu => {
+                        log::info!(
+                            "Starting game from main menu with difficulty: {:?}",
+                            button_type
+                        );
+                        match button_type {
+                            ButtonType::Easy => {
+                                commands.insert_resource(BoardSettings {
+                                    board_width: 9,
+                                    board_height: 9,
+                                    mine_count: 10,
+                                });
+                            }
+                            ButtonType::Medium => {
+                                commands.insert_resource(BoardSettings {
+                                    board_width: 16,
+                                    board_height: 16,
+                                    mine_count: 40,
+                                });
+                            }
+                            ButtonType::Hard => {
+                                commands.insert_resource(BoardSettings {
+                                    board_width: 30,
+                                    board_height: 16,
+                                    mine_count: 99,
+                                });
+                            }
+                            _ => {}
+                        }
+
                         next_state.set(AppState::InGame);
                     }
                     AppState::InGame => {}
                     AppState::Victory => {
                         log::info!("Restarting game from victory menu");
-                        next_state.set(AppState::InGame);
+                        next_state.set(AppState::MainMenu);
                     }
                     AppState::Defeat => {
                         log::info!("Restarting game from defeat menu");
-                        next_state.set(AppState::InGame);
+                        next_state.set(AppState::MainMenu);
                     }
                 },
                 Interaction::Hovered => {}
@@ -85,6 +126,7 @@ impl UiPlugin {
             MenuRoot,
             children![(
                 Button,
+                ButtonType::MainMenu,
                 Node {
                     width: Val::Px(150.),
                     height: Val::Px(65.),
@@ -136,6 +178,7 @@ impl UiPlugin {
             MenuRoot,
             children![(
                 Button,
+                ButtonType::MainMenu,
                 Node {
                     width: Val::Px(150.),
                     height: Val::Px(65.),
@@ -145,7 +188,7 @@ impl UiPlugin {
                 },
                 BackgroundColor(Color::srgb(0.15, 0.15, 0.15)),
                 children![(
-                    Text::new("Restart"),
+                    Text::new("Main Menu"),
                     TextFont {
                         font_size: 33.0,
                         ..default()
@@ -159,35 +202,78 @@ impl UiPlugin {
     pub fn setup_main_menu(mut commands: Commands) {
         commands.spawn((
             Node {
-                // center button
                 width: Val::Percent(100.),
                 height: Val::Percent(100.),
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                display: Display::Flex,
+                row_gap: Val::Px(20.),
                 ..default()
             },
             MenuRoot,
-            children![(
-                Button,
-                Node {
-                    width: Val::Px(150.),
-                    height: Val::Px(65.),
-                    // horizontally center child text
-                    justify_content: JustifyContent::Center,
-                    // vertically center child text
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                BackgroundColor(Color::srgb(0.15, 0.15, 0.15)),
-                children![(
-                    Text::new("Play"),
-                    TextFont {
-                        font_size: 33.0,
+            children![
+                (
+                    Button,
+                    ButtonType::Easy,
+                    Node {
+                        width: Val::Px(150.),
+                        height: Val::Px(65.),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
                         ..default()
                     },
-                    TextColor(Color::srgb(0.9, 0.9, 0.9)),
-                )]
-            )],
+                    BackgroundColor(Color::srgb(0.15, 0.15, 0.15)),
+                    children![(
+                        Text::new("Easy"),
+                        TextFont {
+                            font_size: 33.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                    )]
+                ),
+                (
+                    Button,
+                    ButtonType::Medium,
+                    Node {
+                        width: Val::Px(150.),
+                        height: Val::Px(65.),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.15, 0.15, 0.15)),
+                    children![(
+                        Text::new("Medium"),
+                        TextFont {
+                            font_size: 33.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                    )]
+                ),
+                (
+                    Button,
+                    ButtonType::Hard,
+                    Node {
+                        width: Val::Px(150.),
+                        height: Val::Px(65.),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.15, 0.15, 0.15)),
+                    children![(
+                        Text::new("Hard"),
+                        TextFont {
+                            font_size: 33.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                    )]
+                ),
+            ],
         ));
     }
 }
