@@ -4,6 +4,7 @@ use crate::{
     BoardSettings, UiSettings,
     board::{
         board::Board,
+        board_changed::BoardChanged,
         coordinates::Coordinates,
         sprites::Sprites,
         tile::{tile_state::TileState, tile_type::TileType},
@@ -18,6 +19,7 @@ impl Plugin for BoardPlugin {
     fn build(&self, app: &mut App) {
         app.insert_state::<AppState>(AppState::default())
             .add_systems(OnEnter(AppState::MainMenu), Self::clear_board)
+            .add_event::<BoardChanged>()
             .add_systems(
                 OnEnter(AppState::InGame),
                 (Self::clear_board, Self::create_board).chain(),
@@ -121,6 +123,7 @@ impl BoardPlugin {
         mut tiles: Query<(Entity, &GlobalTransform, &Coordinates)>,
         mut board: Single<&mut Board>,
         ui_settings: Res<UiSettings>,
+        mut board_changed_event: EventWriter<BoardChanged>,
     ) {
         if !mouse_input.just_pressed(MouseButton::Right) {
             return;
@@ -142,6 +145,7 @@ impl BoardPlugin {
             }
 
             tile.toggle_flag();
+            board_changed_event.write(BoardChanged);
         }
     }
 
@@ -152,6 +156,7 @@ impl BoardPlugin {
         mut tiles: Query<(Entity, &GlobalTransform, &Coordinates)>,
         mut board: Single<&mut Board>,
         ui_settings: Res<crate::UiSettings>,
+        mut board_changed_event: EventWriter<BoardChanged>,
     ) {
         if !mouse_input.just_pressed(MouseButton::Left) {
             return;
@@ -172,6 +177,7 @@ impl BoardPlugin {
                 return;
             }
 
+            board_changed_event.write(BoardChanged);
             if tile.state == TileState::Revealed {
                 let _ = board.tile_map.reveal_neighbors(coords);
                 return;
@@ -216,7 +222,14 @@ impl BoardPlugin {
         ui_settings: Res<UiSettings>,
         mut commands: Commands,
         sprites: Res<Sprites>,
+        mut change_reader: EventReader<BoardChanged>,
     ) {
+        if change_reader.is_empty() {
+            return;
+        }
+        change_reader.clear();
+        log::info!("Updating board visuals...");
+
         let box_size = Vec2::new(ui_settings.tile_size, ui_settings.tile_size);
 
         for (image_state_entity, _, coords, children) in &tile_background {

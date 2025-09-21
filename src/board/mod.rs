@@ -1,4 +1,5 @@
 pub mod board;
+mod board_changed;
 pub mod board_plugin;
 pub mod coordinates;
 pub mod settings;
